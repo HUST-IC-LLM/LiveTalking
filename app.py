@@ -142,7 +142,11 @@ async def human(request):
     if params['type']=='echo':
         nerfreals[sessionid].put_msg_txt(params['text'])
     elif params['type']=='chat':
-        res=await asyncio.get_event_loop().run_in_executor(None, llm_response, params['text'],nerfreals[sessionid])                         
+        res=await asyncio.get_event_loop().run_in_executor(None, llm_response, 
+                                                          params['text'],
+                                                          nerfreals[sessionid],
+                                                          opt.llm_model,
+                                                          opt.llm_url)
         #nerfreals[sessionid].put_msg_txt(res)
 
     return web.Response(
@@ -392,6 +396,10 @@ if __name__ == '__main__':
 
     parser.add_argument('--max_session', type=int, default=1)  #multi session count
     parser.add_argument('--listenport', type=int, default=8010)
+
+    # 添加Ollama相关参数
+    parser.add_argument('--llm_model', type=str, default='qwq:latest', help="Ollama模型名称")
+    parser.add_argument('--llm_url', type=str, default='http://localhost:11434', help="Ollama API地址")
 
     opt = parser.parse_args()
     #app.config.from_object(opt)

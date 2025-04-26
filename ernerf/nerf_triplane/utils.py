@@ -168,7 +168,7 @@ def matrix_to_euler_angles(matrix: torch.Tensor, convention: str = 'XYZ') -> tor
     )
     return torch.stack(o, -1)
 
-@torch.cuda.amp.autocast(enabled=False)
+@torch.amp.autocast('cuda', enabled=False)
 def _axis_angle_rotation(axis: str, angle: torch.Tensor) -> torch.Tensor:
     """
     Return the rotation matrices for one of the rotations about an axis
@@ -196,7 +196,7 @@ def _axis_angle_rotation(axis: str, angle: torch.Tensor) -> torch.Tensor:
 
     return torch.stack(R_flat, -1).reshape(angle.shape + (3, 3))
 
-@torch.cuda.amp.autocast(enabled=False)
+@torch.amp.autocast('cuda', enabled=False)
 def euler_angles_to_matrix(euler_angles: torch.Tensor, convention: str='XYZ') -> torch.Tensor:
     """
     Convert rotations given as Euler angles in radians to rotation matrices.
@@ -227,7 +227,7 @@ def euler_angles_to_matrix(euler_angles: torch.Tensor, convention: str='XYZ') ->
     return torch.matmul(torch.matmul(matrices[0], matrices[1]), matrices[2])
 
 
-@torch.cuda.amp.autocast(enabled=False)
+@torch.amp.autocast('cuda', enabled=False)
 def convert_poses(poses):
     # poses: [B, 4, 4]
     # return [B, 3], 4 rot, 3 trans
@@ -236,7 +236,7 @@ def convert_poses(poses):
     out[:, 3:] = poses[:, :3, 3]
     return out
 
-@torch.cuda.amp.autocast(enabled=False)
+@torch.amp.autocast('cuda', enabled=False)
 def get_bg_coords(H, W, device):
     X = torch.arange(H, device=device) / (H - 1) * 2 - 1 # in [-1, 1]
     Y = torch.arange(W, device=device) / (W - 1) * 2 - 1 # in [-1, 1]
@@ -245,7 +245,7 @@ def get_bg_coords(H, W, device):
     return bg_coords
 
 
-@torch.cuda.amp.autocast(enabled=False)
+@torch.amp.autocast('cuda', enabled=False)
 def get_rays(poses, intrinsics, H, W, N=-1, patch_size=1, rect=None):
     ''' get rays
     Args:
@@ -953,7 +953,7 @@ class Trainer(object):
 
         def query_func(pts):
             with torch.no_grad():
-                with torch.cuda.amp.autocast(enabled=self.fp16):
+                with torch.amp.autocast(enabled=self.fp16, device_type='cuda'):
                     sigma = self.model.density(pts.to(self.device))['sigma']
             return sigma
 
@@ -1015,7 +1015,7 @@ class Trainer(object):
 
             for i, data in enumerate(loader):
                 
-                with torch.cuda.amp.autocast(enabled=self.fp16):
+                with torch.amp.autocast(enabled=self.fp16, device_type='cuda'):
                     preds, preds_depth = self.test_step(data)                
                 
                 path = os.path.join(save_path, f'{name}_{i:04d}_rgb.png')
@@ -1070,14 +1070,14 @@ class Trainer(object):
 
             # update grid every 16 steps
             if self.model.cuda_ray and self.global_step % self.opt.update_extra_interval == 0:
-                with torch.cuda.amp.autocast(enabled=self.fp16):
+                with torch.amp.autocast(enabled=self.fp16, device_type='cuda'):
                     self.model.update_extra_state()
             
             self.global_step += 1
 
             self.optimizer.zero_grad()
 
-            with torch.cuda.amp.autocast(enabled=self.fp16):
+            with torch.amp.autocast(enabled=self.fp16, device_type='cuda'):
                 preds, truths, loss = self.train_step(data)
          
             self.scaler.scale(loss).backward()
@@ -1145,7 +1145,7 @@ class Trainer(object):
             self.ema.copy_to()
 
         with torch.no_grad():
-            with torch.cuda.amp.autocast(enabled=self.fp16):
+            with torch.amp.autocast(enabled=self.fp16, device_type='cuda'):
                 # here spp is used as perturb random seed!
                 # face: do not perturb for the first spp, else lead to scatters.
                 preds, preds_depth = self.test_step(data, bg_color=bg_color, perturb=False if spp == 1 else spp)
@@ -1182,7 +1182,7 @@ class Trainer(object):
             self.ema.copy_to()
 
         with torch.no_grad():
-            with torch.cuda.amp.autocast(enabled=self.fp16):
+            with torch.amp.autocast(enabled=self.fp16, device_type='cuda'):
                 # here spp is used as perturb random seed!
                 # face: do not perturb for the first spp, else lead to scatters.
                 preds, preds_depth = self.test_step(data, perturb=False)
@@ -1230,7 +1230,7 @@ class Trainer(object):
         for data in loader:
             # update grid every 16 steps
             if self.model.cuda_ray and self.global_step % self.opt.update_extra_interval == 0:
-                with torch.cuda.amp.autocast(enabled=self.fp16):
+                with torch.amp.autocast(enabled=self.fp16, device_type='cuda'):
                     self.model.update_extra_state()
                     
             self.local_step += 1
@@ -1238,7 +1238,7 @@ class Trainer(object):
 
             self.optimizer.zero_grad()
 
-            with torch.cuda.amp.autocast(enabled=self.fp16):
+            with torch.amp.autocast(enabled=self.fp16, device_type='cuda'):
                 preds, truths, loss = self.train_step(data)
          
             self.scaler.scale(loss).backward()
@@ -1276,7 +1276,7 @@ class Trainer(object):
             pbar.close()
             if self.report_metric_at_train:
                 for metric in self.metrics:
-                    self.log(metric.report(), style="red")
+                    metric.update(preds, truths)
                     if self.use_tensorboardX:
                         metric.write(self.writer, self.epoch, prefix="train")
                     metric.clear()
@@ -1316,7 +1316,7 @@ class Trainer(object):
             for data in loader:    
                 self.local_step += 1
 
-                with torch.cuda.amp.autocast(enabled=self.fp16):
+                with torch.amp.autocast(enabled=self.fp16, device_type='cuda'):
                     preds, preds_depth, pred_ambient_aud, pred_ambient_eye, pred_uncertainty, truths, loss, loss_raw = self.eval_step(data)
                 
                 loss_val = loss.item()
