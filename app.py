@@ -36,7 +36,7 @@ from aiortc import RTCPeerConnection, RTCSessionDescription
 from aiortc.rtcrtpsender import RTCRtpSender
 from webrtc import HumanPlayer
 from basereal import BaseReal
-from llm import llm_response
+from llm import llm_response, ragflow_response
 
 import argparse
 import random
@@ -87,7 +87,13 @@ async def offer(request):
 
     if len(nerfreals) >= opt.max_session:
         logger.info('reach max session')
-        return -1
+        return web.Response(
+            content_type="application/json",
+            text=json.dumps(
+                {"code": -1, "msg": "已达到最大会话数限制"}
+            ),
+            status=429  # Too Many Requests
+        )
     sessionid = randN(6) #len(nerfreals)
     logger.info('sessionid=%d',sessionid)
     nerfreals[sessionid] = None
@@ -135,18 +141,26 @@ async def offer(request):
 async def human(request):
     params = await request.json()
 
+    logger.info("params:",params)
     sessionid = params.get('sessionid',0)
     if params.get('interrupt'):
         nerfreals[sessionid].flush_talk()
 
-    if params['type']=='echo':
+    if params['type']=='echo':  # 直接让数字人播报
         nerfreals[sessionid].put_msg_txt(params['text'])
     elif params['type']=='chat':
-        res=await asyncio.get_event_loop().run_in_executor(None, llm_response, 
+        # res=await asyncio.get_event_loop().run_in_executor(None, llm_response, 
+        #                                                   params['text'],
+        #                                                   nerfreals[sessionid],
+        #                                                   opt.llm_model,
+        #                                                   opt.llm_url)
+        
+        res=await asyncio.get_event_loop().run_in_executor(None, ragflow_response, 
                                                           params['text'],
                                                           nerfreals[sessionid],
-                                                          opt.llm_model,
-                                                          opt.llm_url)
+                                                          opt.ragflow_url,
+                                                          opt.ragflow_agent_id)
+        
         #nerfreals[sessionid].put_msg_txt(res)
 
     return web.Response(
@@ -219,6 +233,38 @@ async def is_speaking(request):
         ),
     )
 
+# async def close_session(request):
+#     """关闭数字人会话"""
+#     params = await request.json()
+#     sessionid = params.get('sessionid', 0)
+    
+#     try:
+#         if sessionid in nerfreals:
+#             # 停止录制（如果正在录制）
+#             if nerfreals[sessionid].recording:
+#                 nerfreals[sessionid].stop_recording()
+            
+#             # 清理资源
+#             del nerfreals[sessionid]
+#             logger.info(f"Session {sessionid} closed successfully")
+            
+#             return web.Response(
+#                 content_type="application/json",
+#                 text=json.dumps({"code": 0, "msg": "Session closed successfully"})
+#             )
+#         else:
+#             return web.Response(
+#                 content_type="application/json",
+#                 text=json.dumps({"code": -1, "msg": "Session not found"}),
+#                 status=404
+#             )
+#     except Exception as e:
+#         logger.error(f"Error closing session {sessionid}: {str(e)}")
+#         return web.Response(
+#             content_type="application/json",
+#             text=json.dumps({"code": -1, "msg": f"Error closing session: {str(e)}"}),
+#             status=500
+#         )
 
 async def on_shutdown(app):
     # close peer connections
@@ -398,8 +444,12 @@ if __name__ == '__main__':
     parser.add_argument('--listenport', type=int, default=8010)
 
     # 添加Ollama相关参数
-    parser.add_argument('--llm_model', type=str, default='qwq:latest', help="Ollama模型名称")
+    parser.add_argument('--llm_model', type=str, default='qwen3:32b', help="Ollama模型名称")
     parser.add_argument('--llm_url', type=str, default='http://localhost:11434', help="Ollama API地址")
+    
+    # 添加RAGFlow相关参数
+    parser.add_argument('--ragflow_url', type=str, default='http://localhost:8080', help="RAGFlow API地址")
+    parser.add_argument('--ragflow_agent_id', type=str, default='a4cf97b82a3311f0b9a9529bb6126436', help="RAGFlow Agent ID")
 
     opt = parser.parse_args()
     #app.config.from_object(opt)
@@ -461,6 +511,7 @@ if __name__ == '__main__':
     appasync.router.add_post("/set_audiotype", set_audiotype)
     appasync.router.add_post("/record", record)
     appasync.router.add_post("/is_speaking", is_speaking)
+    # appasync.router.add_post("/close_session", close_session)
     appasync.router.add_static('/',path='web')
 
     # Configure default CORS settings.

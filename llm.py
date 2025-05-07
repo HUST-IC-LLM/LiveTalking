@@ -24,7 +24,7 @@ def llm_response(message, nerfreal: BaseReal, model_name="llama3", ollama_url="h
     # Ollama请求数据
     data = {
         "model": model_name,
-        "messages": [
+        "messages": [   # 如果要追加以前的消息记录，则需要加上以前的message进行管理！
             {"role": "system", "content": "你是一个有帮助的中文助手，请用简短、直接的方式回答问题。"},
             {"role": "user", "content": message}
         ],
@@ -65,7 +65,7 @@ def llm_response(message, nerfreal: BaseReal, model_name="llama3", ollama_url="h
                             if char in ",.!;:，。！？：；":
                                 result = result + msg[lastpos:i+1]
                                 lastpos = i+1
-                                if len(result) > 10:
+                                if len(result) > 10:    # 以10个字符为单位，发送给数字人说话
                                     logger.info(result)
                                     nerfreal.put_msg_txt(result)
                                     result = ""
@@ -88,3 +88,60 @@ def llm_response(message, nerfreal: BaseReal, model_name="llama3", ollama_url="h
         logger.error(error_msg)
         nerfreal.put_msg_txt(error_msg)
         return error_msg    
+    
+
+def ragflow_response(message, nerfreal : BaseReal, ragflow_url = "http://localhost:8080", agent_id = "a4cf97b82a3311f0b9a9529bb6126436"):
+    '''调用ragflow接口，'''
+    from ragflow.ragflow import rag_client
+    import asyncio
+    import json
+    
+    logger.info(f"使用RAGFlow模型，Agent ID: {agent_id}")
+    logger.info(f"RAGFlow URL: {ragflow_url}")
+    
+    try:
+        # 创建异步事件循环
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        # 获取异步生成器
+        async_gen = rag_client.chat(assistant_id=agent_id, question=message, stream=True, is_agent=True)
+        
+        msg = "" # 流式响应收到的总消息
+        lastpos = 0
+        
+        # 使用异步迭代器处理响应
+        async def process_response():
+            nonlocal msg, lastpos
+            try:
+                async for chunk in async_gen:
+                    chunk_data = json.loads(chunk)
+                    if chunk_data["type"] == "text":
+                        msg = chunk_data["content"]
+                        result = msg[lastpos:]
+                        nerfreal.put_msg_txt(result) 
+                        lastpos = len(msg)
+                    elif chunk_data['type'] == "end":
+                        logger.info("[Debug] ragflow_response end")
+            except json.JSONDecodeError as e:
+                error_detail = f"JSON解析错误: {str(e)}"
+                logger.error(f"RAGFlow JSON解析错误: {error_detail}")
+                raise Exception(error_detail)
+            except Exception as e:
+                error_detail = f"处理响应时出错: {str(e)}"
+                logger.error(f"RAGFlow 处理错误: {error_detail}")
+                raise Exception(error_detail)
+        
+        # 运行异步处理
+        loop.run_until_complete(process_response())
+        loop.close()
+                
+        return "ragflow 消息处理完成"
+    
+    except Exception as e:
+        error_msg = f"调用RAGFlow出错: {str(e)}"
+        logger.error(error_msg)
+        nerfreal.put_msg_txt(error_msg)
+        return error_msg
+    
+    

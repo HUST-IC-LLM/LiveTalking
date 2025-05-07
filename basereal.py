@@ -25,6 +25,7 @@ import time
 import cv2
 import glob
 import resampy
+import requests
 
 import queue
 from queue import Queue
@@ -39,6 +40,10 @@ from ttsreal import EdgeTTS,SovitsTTS,XTTS,CosyVoiceTTS,FishTTS,TencentTTS
 from logger import logger
 
 from tqdm import tqdm
+
+# 后端API配置
+BACKEND_API = "http://localhost:8888"  # 后端API地址
+
 def read_imgs(img_list):
     frames = []
     logger.info('reading images...')
@@ -53,6 +58,11 @@ class BaseReal:
         self.sample_rate = 16000
         self.chunk = self.sample_rate // opt.fps # 320 samples per chunk (20ms * 16000 / 1000)
         self.sessionid = self.opt.sessionid
+        self.username = self.opt.username if hasattr(self.opt, 'username') else 'default'
+        self.backend_token = self.opt.backend_token if hasattr(self.opt, 'backend_token') else None
+
+        # 从后端获取会话信息
+        self._init_session_from_backend()
 
         if opt.tts == "edgetts":
             self.tts = EdgeTTS(opt,self)
@@ -81,6 +91,38 @@ class BaseReal:
         self.custom_index = {}
         self.custom_opt = {}
         self.__loadcustom()
+
+    def _init_session_from_backend(self):
+        """从后端获取会话信息"""
+        try:
+            if not self.backend_token:
+                logger.warning("No backend token provided, using default session")
+                self.video_dir = os.path.join('videos', self.username)
+                os.makedirs(self.video_dir, exist_ok=True)
+                return
+
+            # 创建会话
+            response = requests.post(
+                f"{BACKEND_API}/digital-person/create-session",
+                headers={"Authorization": f"Bearer {self.backend_token}"}
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                self.sessionid = data["session_id"]
+                # 确保视频目录存在
+                self.video_dir = os.path.join('videos', self.username, str(self.sessionid))
+                os.makedirs(self.video_dir, exist_ok=True)
+                logger.info(f"Session initialized from backend: {self.sessionid}, video_dir: {self.video_dir}")
+            else:
+                logger.error(f"Failed to create session: {response.text}")
+                raise Exception("Failed to create session from backend")
+                
+        except Exception as e:
+            logger.error(f"Error initializing session from backend: {str(e)}")
+            # 使用默认配置
+            self.video_dir = os.path.join('videos', self.username, str(self.sessionid))
+            os.makedirs(self.video_dir, exist_ok=True)
 
     def put_msg_txt(self,msg,eventpoint=None):
         self.tts.put_msg_txt(msg,eventpoint)
@@ -147,6 +189,19 @@ class BaseReal:
         if self.recording:
             return
 
+        # 确保视频目录存在
+        os.makedirs(self.video_dir, exist_ok=True)
+
+        # 生成唯一的文件名
+        timestamp = int(time.time())
+        self.current_video_name = f"{self.sessionid}_{timestamp}.mp4"
+        self.current_audio_name = f"{self.sessionid}_{timestamp}.aac"
+        self.current_video_path = os.path.join(self.video_dir, self.current_video_name)
+        self.current_audio_path = os.path.join(self.video_dir, self.current_audio_name)
+
+        # 记录日志
+        logger.info(f"Starting recording: video={self.current_video_path}, audio={self.current_audio_path}")
+
         command = ['ffmpeg',
                     '-y', '-an',
                     '-f', 'rawvideo',
@@ -157,29 +212,21 @@ class BaseReal:
                     '-i', '-',
                     '-pix_fmt', 'yuv420p', 
                     '-vcodec', "h264",
-                    #'-f' , 'flv',                  
-                    f'temp{self.opt.sessionid}.mp4']
+                    self.current_video_path]
         self._record_video_pipe = subprocess.Popen(command, shell=False, stdin=subprocess.PIPE)
 
         acommand = ['ffmpeg',
                     '-y', '-vn',
                     '-f', 's16le',
-                    #'-acodec','pcm_s16le',
                     '-ac', '1',
                     '-ar', '16000',
                     '-i', '-',
                     '-acodec', 'aac',
-                    #'-f' , 'wav',                  
-                    f'temp{self.opt.sessionid}.aac']
+                    self.current_audio_path]
         self._record_audio_pipe = subprocess.Popen(acommand, shell=False, stdin=subprocess.PIPE)
 
         self.recording = True
-        # self.recordq_video.queue.clear()
-        # self.recordq_audio.queue.clear()
-        # self.container = av.open(path, mode="w")
-    
-        # process_thread = Thread(target=self.record_frame, args=())
-        # process_thread.start()
+        logger.info("Recording started")
     
     def record_video_data(self,image):
         if self.width == 0:
@@ -191,59 +238,57 @@ class BaseReal:
     def record_audio_data(self,frame):
         if self.recording:
             self._record_audio_pipe.stdin.write(frame.tostring())
-    
-    # def record_frame(self): 
-    #     videostream = self.container.add_stream("libx264", rate=25)
-    #     videostream.codec_context.time_base = Fraction(1, 25)
-    #     audiostream = self.container.add_stream("aac")
-    #     audiostream.codec_context.time_base = Fraction(1, 16000)
-    #     init = True
-    #     framenum = 0       
-    #     while self.recording:
-    #         try:
-    #             videoframe = self.recordq_video.get(block=True, timeout=1)
-    #             videoframe.pts = framenum #int(round(framenum*0.04 / videostream.codec_context.time_base))
-    #             videoframe.dts = videoframe.pts
-    #             if init:
-    #                 videostream.width = videoframe.width
-    #                 videostream.height = videoframe.height
-    #                 init = False
-    #             for packet in videostream.encode(videoframe):
-    #                 self.container.mux(packet)
-    #             for k in range(2):
-    #                 audioframe = self.recordq_audio.get(block=True, timeout=1)
-    #                 audioframe.pts = int(round((framenum*2+k)*0.02 / audiostream.codec_context.time_base))
-    #                 audioframe.dts = audioframe.pts
-    #                 for packet in audiostream.encode(audioframe):
-    #                     self.container.mux(packet)
-    #             framenum += 1
-    #         except queue.Empty:
-    #             print('record queue empty,')
-    #             continue
-    #         except Exception as e:
-    #             print(e)
-    #             #break
-    #     for packet in videostream.encode(None):
-    #         self.container.mux(packet)
-    #     for packet in audiostream.encode(None):
-    #         self.container.mux(packet)
-    #     self.container.close()
-    #     self.recordq_video.queue.clear()
-    #     self.recordq_audio.queue.clear()
-    #     print('record thread stop')
 		
     def stop_recording(self):
         """停止录制视频"""
         if not self.recording:
             return
+            
+        logger.info("Stopping recording...")
         self.recording = False 
-        self._record_video_pipe.stdin.close()  #wait() 
+        
+        # 关闭视频管道
+        if self._record_video_pipe and self._record_video_pipe.stdin:
+            self._record_video_pipe.stdin.close()
         self._record_video_pipe.wait()
-        self._record_audio_pipe.stdin.close()
+            
+        # 关闭音频管道
+        if self._record_audio_pipe and self._record_audio_pipe.stdin:
+            self._record_audio_pipe.stdin.close()
         self._record_audio_pipe.wait()
-        cmd_combine_audio = f"ffmpeg -y -i temp{self.opt.sessionid}.aac -i temp{self.opt.sessionid}.mp4 -c:v copy -c:a copy data/record.mp4"
+
+        # 合并音视频
+        output_path = os.path.join(self.video_dir, f"{self.sessionid}_{int(time.time())}.mp4")
+        logger.info(f"Merging audio and video to: {output_path}")
+        
+        cmd_combine_audio = f"ffmpeg -y -i {self.current_audio_path} -i {self.current_video_path} -c:v copy -c:a copy {output_path}"
         os.system(cmd_combine_audio) 
-        #os.remove(output_path)
+
+        # 清理临时文件
+        try:
+            if os.path.exists(self.current_video_path):
+                os.remove(self.current_video_path)
+            if os.path.exists(self.current_audio_path):
+                os.remove(self.current_audio_path)
+            logger.info("Temporary files cleaned up")
+        except Exception as e:
+            logger.error(f"Error cleaning up temporary files: {str(e)}")
+
+        # 通知后端视频录制完成
+        try:
+            if self.backend_token:
+                response = requests.post(
+                    f"{BACKEND_API}/digital-person/notify-video-complete",
+                    headers={"Authorization": f"Bearer {self.backend_token}"},
+                    json={
+                        "session_id": self.sessionid,
+                        "video_path": output_path
+                    }
+                )
+                if response.status_code != 200:
+                    logger.error(f"Failed to notify backend: {response.text}")
+        except Exception as e:
+            logger.error(f"Error notifying backend: {str(e)}")
 
     def mirror_index(self,size, index):
         #size = len(self.coord_list_cycle)
