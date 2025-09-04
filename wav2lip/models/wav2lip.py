@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from .conv_384 import Conv2dTranspose, Conv2d, nonorm_Conv2d
+from .utils import Conv2d, Conv2dTranspose, nonorm_Conv2d
 
 
 class SpatialAttention(nn.Module):
@@ -35,72 +35,84 @@ class Wav2Lip(nn.Module):
     def __init__(self, audio_encoder=None):
         super(Wav2Lip, self).__init__()
         self.sam = SAM()
-        self.face_encoder_blocks = nn.ModuleList([
-            nn.Sequential(Conv2d(6, 16, kernel_size=7, stride=1, padding=3),
-                          Conv2d(16, 16, kernel_size=3, stride=1, padding=1, residual=True),
-                          Conv2d(16, 16, kernel_size=3, stride=1, padding=1, residual=True),
-                          Conv2d(16, 16, kernel_size=3, stride=1, padding=1, residual=True)),  # 192, 192
-
-            nn.Sequential(Conv2d(16, 32, kernel_size=3, stride=2, padding=1),  # 96, 96
-                          Conv2d(32, 32, kernel_size=3, stride=1, padding=1, residual=True),
-                          Conv2d(32, 32, kernel_size=3, stride=1, padding=1, residual=True),
-                          Conv2d(32, 32, kernel_size=3, stride=1, padding=1, residual=True)),
-
-            nn.Sequential(Conv2d(32, 64, kernel_size=3, stride=2, padding=1),  # 48, 48
-                          Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
-                          Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
-                          Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True)),
-
-            nn.Sequential(Conv2d(64, 128, kernel_size=3, stride=2, padding=1),  # 24, 24
-                          Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True),
-                          Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True),
-                          Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True)),
-
-            nn.Sequential(Conv2d(128, 256, kernel_size=3, stride=2, padding=1),  # 12, 12
-                          Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True),
-                          Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True),
-                          Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True)),
-
-            nn.Sequential(Conv2d(256, 512, kernel_size=3, stride=2, padding=1),  # 6, 6
-                          Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True),
-                          Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True),
-                          Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True)),
-
-            nn.Sequential(Conv2d(512, 1024, kernel_size=3, stride=2, padding=1),  # 3, 3
-                          Conv2d(1024, 1024, kernel_size=3, stride=1, padding=1, residual=True),
-                          Conv2d(1024, 1024, kernel_size=3, stride=1, padding=1, residual=True),
-                          Conv2d(1024, 1024, kernel_size=3, stride=1, padding=1, residual=True)),
-
-            nn.Sequential(Conv2d(1024, 1024, kernel_size=3, stride=1, padding=0),  # 1, 1
-                          Conv2d(1024, 1024, kernel_size=1, stride=1, padding=0),
-                          Conv2d(1024, 1024, kernel_size=1, stride=1, padding=0)), ])
-  
+        self.face_encoder_blocks = nn.ModuleList(
+            [
+                nn.Sequential(
+                    Conv2d(6, 16, kernel_size=7, stride=1, padding=3),
+                    Conv2d(16, 16, kernel_size=3, stride=1, padding=1, residual=True),
+                    Conv2d(16, 16, kernel_size=3, stride=1, padding=1, residual=True),
+                    Conv2d(16, 16, kernel_size=3, stride=1, padding=1, residual=True),
+                ),  # 192, 192
+                nn.Sequential(
+                    Conv2d(16, 32, kernel_size=3, stride=2, padding=1),  # 96, 96
+                    Conv2d(32, 32, kernel_size=3, stride=1, padding=1, residual=True),
+                    Conv2d(32, 32, kernel_size=3, stride=1, padding=1, residual=True),
+                    Conv2d(32, 32, kernel_size=3, stride=1, padding=1, residual=True),
+                ),
+                nn.Sequential(
+                    Conv2d(32, 64, kernel_size=3, stride=2, padding=1),  # 48, 48
+                    Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
+                    Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
+                    Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
+                ),
+                nn.Sequential(
+                    Conv2d(64, 128, kernel_size=3, stride=2, padding=1),  # 24, 24
+                    Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True),
+                    Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True),
+                    Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True),
+                ),
+                nn.Sequential(
+                    Conv2d(128, 256, kernel_size=3, stride=2, padding=1),  # 12, 12
+                    Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True),
+                    Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True),
+                    Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True),
+                ),
+                nn.Sequential(
+                    Conv2d(256, 512, kernel_size=3, stride=2, padding=1),  # 6, 6
+                    Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True),
+                    Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True),
+                    Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True),
+                ),
+                nn.Sequential(
+                    Conv2d(512, 1024, kernel_size=3, stride=2, padding=1),  # 3, 3
+                    Conv2d(
+                        1024, 1024, kernel_size=3, stride=1, padding=1, residual=True
+                    ),
+                    Conv2d(
+                        1024, 1024, kernel_size=3, stride=1, padding=1, residual=True
+                    ),
+                    Conv2d(
+                        1024, 1024, kernel_size=3, stride=1, padding=1, residual=True
+                    ),
+                ),
+                nn.Sequential(
+                    Conv2d(1024, 1024, kernel_size=3, stride=1, padding=0),  # 1, 1
+                    Conv2d(1024, 1024, kernel_size=1, stride=1, padding=0),
+                    Conv2d(1024, 1024, kernel_size=1, stride=1, padding=0),
+                ),
+            ]
+        )
 
         if audio_encoder is None:
             self.audio_encoder = nn.Sequential(
                 Conv2d(1, 32, kernel_size=3, stride=1, padding=1),
                 Conv2d(32, 32, kernel_size=3, stride=1, padding=1, residual=True),
                 Conv2d(32, 32, kernel_size=3, stride=1, padding=1, residual=True),
-
                 Conv2d(32, 64, kernel_size=3, stride=(3, 1), padding=1),
                 Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
                 Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
-
                 Conv2d(64, 128, kernel_size=3, stride=3, padding=1),
                 Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True),
                 Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True),
-
                 Conv2d(128, 256, kernel_size=3, stride=(3, 2), padding=1),
                 Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True),
                 Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True),
-
-
                 Conv2d(256, 512, kernel_size=3, stride=1, padding=1),
                 Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True),
                 Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True),
-
                 Conv2d(512, 1024, kernel_size=3, stride=1, padding=0),
-                Conv2d(1024, 1024, kernel_size=1, stride=1, padding=0))
+                Conv2d(1024, 1024, kernel_size=1, stride=1, padding=0),
+            )
 
         else:
             self.audio_encoder = audio_encoder
@@ -110,60 +122,94 @@ class Wav2Lip(nn.Module):
 
         self.audio_refine = nn.Sequential(
             Conv2d(1024, 1024, kernel_size=1, stride=1, padding=0),
-            Conv2d(1024, 1024, kernel_size=1, stride=1, padding=0))
+            Conv2d(1024, 1024, kernel_size=1, stride=1, padding=0),
+        )
 
-        self.face_decoder_blocks = nn.ModuleList([
-            nn.Sequential(Conv2d(1024, 1024, kernel_size=1, stride=1, padding=0), ),  # + 1024
+        self.face_decoder_blocks = nn.ModuleList(
+            [
+                nn.Sequential(
+                    Conv2d(1024, 1024, kernel_size=1, stride=1, padding=0),
+                ),  # + 1024
+                nn.Sequential(
+                    Conv2dTranspose(
+                        2048, 1024, kernel_size=3, stride=1, padding=0
+                    ),  # 3,3
+                    Conv2d(
+                        1024, 1024, kernel_size=3, stride=1, padding=1, residual=True
+                    ),
+                ),  # + 1024
+                nn.Sequential(
+                    Conv2dTranspose(
+                        2048, 1024, kernel_size=3, stride=2, padding=1, output_padding=1
+                    ),
+                    Conv2d(
+                        1024, 1024, kernel_size=3, stride=1, padding=1, residual=True
+                    ),
+                    Conv2d(
+                        1024, 1024, kernel_size=3, stride=1, padding=1, residual=True
+                    ),
+                ),  # 6, 6  + 512
+                nn.Sequential(
+                    Conv2dTranspose(
+                        1536, 768, kernel_size=3, stride=2, padding=1, output_padding=1
+                    ),
+                    Conv2d(768, 768, kernel_size=3, stride=1, padding=1, residual=True),
+                    Conv2d(768, 768, kernel_size=3, stride=1, padding=1, residual=True),
+                ),  # 12, 12  + 256
+                nn.Sequential(
+                    Conv2dTranspose(
+                        1024, 512, kernel_size=3, stride=2, padding=1, output_padding=1
+                    ),
+                    Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True),
+                    Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True),
+                ),  # 24, 24  + 128
+                nn.Sequential(
+                    Conv2dTranspose(
+                        640, 256, kernel_size=3, stride=2, padding=1, output_padding=1
+                    ),
+                    Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True),
+                    Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True),
+                ),  # 48, 48  + 64
+                nn.Sequential(
+                    Conv2dTranspose(
+                        320, 128, kernel_size=3, stride=2, padding=1, output_padding=1
+                    ),
+                    Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True),
+                    Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True),
+                ),  # 96, 96  + 32
+                nn.Sequential(
+                    Conv2dTranspose(
+                        160, 64, kernel_size=3, stride=2, padding=1, output_padding=1
+                    ),
+                    Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
+                    Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
+                ),
+            ]
+        )  # 192, 192  + 16
 
-
-            nn.Sequential(Conv2dTranspose(2048, 1024, kernel_size=3, stride=1, padding=0),  # 3,3
-                          Conv2d(1024, 1024, kernel_size=3, stride=1, padding=1, residual=True), ),  # + 1024
-
-            nn.Sequential(Conv2dTranspose(2048, 1024, kernel_size=3, stride=2, padding=1, output_padding=1),
-                          Conv2d(1024, 1024, kernel_size=3, stride=1, padding=1, residual=True),
-                          Conv2d(1024, 1024, kernel_size=3, stride=1, padding=1, residual=True), ),  # 6, 6  + 512
-
-            nn.Sequential(Conv2dTranspose(1536, 768, kernel_size=3, stride=2, padding=1, output_padding=1),
-                          Conv2d(768, 768, kernel_size=3, stride=1, padding=1, residual=True),
-                          Conv2d(768, 768, kernel_size=3, stride=1, padding=1, residual=True), ),  # 12, 12  + 256
-
-            nn.Sequential(Conv2dTranspose(1024, 512, kernel_size=3, stride=2, padding=1, output_padding=1),
-                          Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True),
-                          Conv2d(512, 512, kernel_size=3, stride=1, padding=1, residual=True), ),  # 24, 24  + 128
-
-
-            nn.Sequential(Conv2dTranspose(640, 256, kernel_size=3, stride=2, padding=1, output_padding=1),
-                          Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True),
-                          Conv2d(256, 256, kernel_size=3, stride=1, padding=1, residual=True), ),  # 48, 48  + 64
-
-            nn.Sequential(Conv2dTranspose(320, 128, kernel_size=3, stride=2, padding=1, output_padding=1),
-                          Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True),
-                          Conv2d(128, 128, kernel_size=3, stride=1, padding=1, residual=True), ),  # 96, 96  + 32
-
-            nn.Sequential(Conv2dTranspose(160, 64, kernel_size=3, stride=2, padding=1, output_padding=1),
-                          Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True),
-                          Conv2d(64, 64, kernel_size=3, stride=1, padding=1, residual=True), ), ])  # 192, 192  + 16
-
-        self.output_block = nn.Sequential(Conv2d(80, 32, kernel_size=3, stride=1, padding=1),
-                                          nn.Conv2d(32, 3, kernel_size=1, stride=1, padding=0),
-                                          nn.Sigmoid())
+        self.output_block = nn.Sequential(
+            Conv2d(80, 32, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(32, 3, kernel_size=1, stride=1, padding=0),
+            nn.Sigmoid(),
+        )
 
     def freeze_audio_encoder(self):
         for p in self.audio_encoder.parameters():
             p.requires_grad = False
 
     def forward(self, audio_sequences, face_sequences):
-
         B = audio_sequences.size(0)
 
         input_dim_size = len(face_sequences.size())
         if input_dim_size > 4:
-            audio_sequences = torch.cat([audio_sequences[:, i] for i in range(audio_sequences.size(1))], dim=0)
-            face_sequences = torch.cat([face_sequences[:, :, i] for i in range(face_sequences.size(2))], dim=0)
+            audio_sequences = torch.cat(
+                [audio_sequences[:, i] for i in range(audio_sequences.size(1))], dim=0
+            )
+            face_sequences = torch.cat(
+                [face_sequences[:, :, i] for i in range(face_sequences.size(2))], dim=0
+            )
 
         audio_embedding = self.audio_encoder(audio_sequences)  # B, 512, 1, 1
-
-
 
         feats = []
         x = face_sequences
@@ -196,3 +242,82 @@ class Wav2Lip(nn.Module):
 
         return outputs
 
+
+class Wav2Lip_disc_qual(nn.Module):
+    def __init__(self):
+        super(Wav2Lip_disc_qual, self).__init__()
+
+        self.face_encoder_blocks = nn.ModuleList(
+            [
+                nn.Sequential(nonorm_Conv2d(3, 32, kernel_size=7, stride=1, padding=3)),
+                nn.Sequential(
+                    nonorm_Conv2d(32, 64, kernel_size=5, stride=(1, 2), padding=2),
+                    nonorm_Conv2d(64, 64, kernel_size=5, stride=1, padding=2),
+                ),
+                nn.Sequential(
+                    nonorm_Conv2d(64, 128, kernel_size=5, stride=2, padding=2),
+                    nonorm_Conv2d(128, 128, kernel_size=5, stride=1, padding=2),
+                ),
+                nn.Sequential(
+                    nonorm_Conv2d(128, 256, kernel_size=5, stride=2, padding=2),
+                    nonorm_Conv2d(256, 256, kernel_size=5, stride=1, padding=2),
+                ),
+                nn.Sequential(
+                    nonorm_Conv2d(256, 512, kernel_size=3, stride=2, padding=1),
+                    nonorm_Conv2d(512, 512, kernel_size=3, stride=1, padding=1),
+                ),
+                nn.Sequential(
+                    nonorm_Conv2d(512, 512, kernel_size=3, stride=2, padding=1),
+                    nonorm_Conv2d(512, 512, kernel_size=3, stride=1, padding=1),
+                ),
+                nn.Sequential(
+                    nonorm_Conv2d(512, 512, kernel_size=3, stride=2, padding=1),
+                    nonorm_Conv2d(512, 512, kernel_size=3, stride=1, padding=1),
+                ),
+                nn.Sequential(
+                    nonorm_Conv2d(512, 512, kernel_size=4, stride=1, padding=0),
+                    nonorm_Conv2d(512, 512, kernel_size=1, stride=1, padding=0),
+                ),
+            ]
+        )
+
+        self.binary_pred = nn.Sequential(
+            nn.Conv2d(512, 1, kernel_size=1, stride=1, padding=0), nn.Sigmoid()
+        )
+        self.label_noise = 0.0
+
+    def get_lower_half(self, face_sequences):  # 取得输入图片的下半部分。
+        return face_sequences[:, :, face_sequences.size(2) // 2 :]
+
+    def to_2d(self, face_sequences):  # 将输入的图片序列连接起来，形成一个二维的tensor。
+        B = face_sequences.size(0)
+        face_sequences = torch.cat(
+            [face_sequences[:, :, i] for i in range(face_sequences.size(2))], dim=0
+        )
+        return face_sequences
+
+    def perceptual_forward(self, false_face_sequences):  # 前传生成图像
+        false_face_sequences = self.to_2d(
+            false_face_sequences
+        )  # [bz, 3, 5, 256, 256]->[bz*5, 3, 256, 256]
+        false_face_sequences = self.get_lower_half(
+            false_face_sequences
+        )  # [bz*5, 3, 256, 256]->[bz*5, 3, 128, 256]
+
+        false_feats = false_face_sequences
+        for f in self.face_encoder_blocks:  # [bz*5, 3, 128, 256]->[bz*5, 512, 1, 1]
+            false_feats = f(false_feats)
+
+        return self.binary_pred(false_feats).view(
+            len(false_feats), -1
+        )  # [bz*5, 512, 1, 1]->[bz*5, 1, 1]
+
+    def forward(self, face_sequences):  # 前传真值图像
+        face_sequences = self.to_2d(face_sequences)
+        face_sequences = self.get_lower_half(face_sequences)
+
+        x = face_sequences
+        for f in self.face_encoder_blocks:
+            x = f(x)
+
+        return self.binary_pred(x).view(len(x), -1)
